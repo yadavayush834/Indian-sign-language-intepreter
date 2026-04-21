@@ -79,6 +79,8 @@ India has **63 lakh+ deaf and hard-of-hearing individuals** who face communicati
 
 ## 🚀 Getting Started
 
+New here? Follow the beginner guide: **[BEGINNER_SETUP.md](BEGINNER_SETUP.md)**
+
 ### Prerequisites
 - Node.js v20+
 - Java JDK 17+
