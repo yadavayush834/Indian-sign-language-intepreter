@@ -2,9 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_SIGN_API_URL || 'http://localhost:8000'
-const HIGH_CONFIDENCE_THRESHOLD = 0.5
+const HIGH_CONFIDENCE_THRESHOLD = 0.4
 const STABLE_STREAK_REQUIRED = 3
 const LETTER_RESET_DELAY_MS = 700
+const DYNAMIC_SEQUENCE_LENGTH = 30
+const DYNAMIC_SEQUENCE_STEP = 2
+const DYNAMIC_BUFFER_KEEP_AFTER_ACCEPT = 22
+const DYNAMIC_LABEL_COOLDOWN_MS = 900
+const DYNAMIC_MISS_LIMIT = 8
+const DYNAMIC_CAPTURE_WIDTH = 320
+const DYNAMIC_CAPTURE_HEIGHT = 240
 
 const buildStatus = (state, error = '') => ({ state, error })
 
@@ -33,11 +40,14 @@ const useSignInference = ({ videoRef, enabled, mode = 'static' }) => {
   const stableCandidateRef = useRef({ label: '', streak: 0 })
   const letterBufferRef = useRef([])
   const sequenceBufferRef = useRef([])
+  const dynamicMissedFramesRef = useRef(0)
+  const dynamicFramesSincePredictRef = useRef(0)
+  const dynamicLastAcceptedAtRef = useRef(0)
   const lastAcceptedAtRef = useRef(0)
   const lastCommittedLetterRef = useRef('')
   const manualSpaceActionRef = useRef(() => {})
 
-  const intervalMs = useMemo(() => (mode === 'dynamic' ? 100 : 250), [mode])
+  const intervalMs = useMemo(() => (mode === 'dynamic' ? 45 : 250), [mode])
 
   // Need a stable way to call applySuggestion inside the effect
   const applySuggestionRef = useRef(null)
@@ -47,6 +57,9 @@ const useSignInference = ({ videoRef, enabled, mode = 'static' }) => {
       stableCandidateRef.current = { label: '', streak: 0 }
       letterBufferRef.current = []
       sequenceBufferRef.current = []
+      dynamicMissedFramesRef.current = 0
+      dynamicFramesSincePredictRef.current = 0
+      dynamicLastAcceptedAtRef.current = 0
       lastAcceptedAtRef.current = 0
       lastCommittedLetterRef.current = ''
       setWordState(buildWordState())
@@ -101,8 +114,8 @@ const useSignInference = ({ videoRef, enabled, mode = 'static' }) => {
       try {
         if (!canvasRef.current) canvasRef.current = document.createElement('canvas')
         const canvas = canvasRef.current
-        canvas.width = videoEl.videoWidth || 640
-        canvas.height = videoEl.videoHeight || 480
+        canvas.width = mode === 'dynamic' ? DYNAMIC_CAPTURE_WIDTH : (videoEl.videoWidth || 640)
+        canvas.height = mode === 'dynamic' ? DYNAMIC_CAPTURE_HEIGHT : (videoEl.videoHeight || 480)
 
         const ctx = canvas.getContext('2d')
         if (!ctx) throw new Error('Unable to initialize canvas context')
@@ -112,15 +125,19 @@ const useSignInference = ({ videoRef, enabled, mode = 'static' }) => {
         ctx.drawImage(videoEl, -canvas.width, 0, canvas.width, canvas.height)
         ctx.restore()
 
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.72))
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', mode === 'dynamic' ? 0.55 : 0.72))
         if (!blob) throw new Error('Failed to capture frame')
 
         const form = new FormData()
         form.append('image', blob, 'frame.jpg')
-        form.append('threshold', String(HIGH_CONFIDENCE_THRESHOLD))
 
-        const { data } = await axios.post(`${API_BASE_URL}/predict`, form, {
-          timeout: 4000,
+        const endpoint = mode === 'dynamic' ? '/extract_landmarks' : '/predict'
+        if (mode === 'static') {
+          form.append('threshold', String(HIGH_CONFIDENCE_THRESHOLD))
+        }
+
+        const { data } = await axios.post(`${API_BASE_URL}${endpoint}`, form, {
+          timeout: mode === 'dynamic' ? 2500 : 4000,
           headers: { 'Content-Type': 'multipart/form-data' }
         })
 
@@ -167,17 +184,28 @@ const useSignInference = ({ videoRef, enabled, mode = 'static' }) => {
           // Dynamic Mode
           if (handDetected && landmarks.length === 126) {
             sequenceBufferRef.current.push(landmarks)
-            if (sequenceBufferRef.current.length > 30) sequenceBufferRef.current.shift()
+            if (sequenceBufferRef.current.length > DYNAMIC_SEQUENCE_LENGTH) sequenceBufferRef.current.shift()
+            dynamicMissedFramesRef.current = 0
+            dynamicFramesSincePredictRef.current += 1
           } else {
-            sequenceBufferRef.current = []
+            dynamicMissedFramesRef.current += 1
+            if (dynamicMissedFramesRef.current > DYNAMIC_MISS_LIMIT) {
+              sequenceBufferRef.current = []
+              dynamicFramesSincePredictRef.current = 0
+            }
           }
 
-          if (sequenceBufferRef.current.length === 30) {
+          if (
+            sequenceBufferRef.current.length === DYNAMIC_SEQUENCE_LENGTH &&
+            dynamicFramesSincePredictRef.current >= DYNAMIC_SEQUENCE_STEP
+          ) {
+            dynamicFramesSincePredictRef.current = 0
+
             const seqForm = new FormData()
             seqForm.append('sequences', JSON.stringify(sequenceBufferRef.current))
-            seqForm.append('threshold', '0.7')
+            seqForm.append('threshold', '0.5')
 
-            const seqRes = await axios.post(`${API_BASE_URL}/predict_sequence`, seqForm)
+            const seqRes = await axios.post(`${API_BASE_URL}/predict_sequence`, seqForm, { timeout: 2500 })
             const seqData = seqRes.data
 
             if (seqData.label && seqData.accepted) {
@@ -189,11 +217,18 @@ const useSignInference = ({ videoRef, enabled, mode = 'static' }) => {
                 modeName: 'DYNAMIC_LSTM'
               })
 
-              if (lastCommittedLetterRef.current !== seqData.label) {
+              const now = Date.now()
+              const sameLabelCooldownActive = (
+                lastCommittedLetterRef.current === seqData.label &&
+                (now - dynamicLastAcceptedAtRef.current) < DYNAMIC_LABEL_COOLDOWN_MS
+              )
+
+              if (!sameLabelCooldownActive) {
                 if (applySuggestionRef.current) applySuggestionRef.current(seqData.label)
                 lastCommittedLetterRef.current = seqData.label
-                lastAcceptedAtRef.current = Date.now()
-                sequenceBufferRef.current = []
+                dynamicLastAcceptedAtRef.current = now
+                lastAcceptedAtRef.current = now
+                sequenceBufferRef.current = sequenceBufferRef.current.slice(-DYNAMIC_BUFFER_KEEP_AFTER_ACCEPT)
               }
             } else {
               setPrediction({
@@ -206,15 +241,17 @@ const useSignInference = ({ videoRef, enabled, mode = 'static' }) => {
             }
           } else {
             setPrediction({
-              label: 'Recording...',
-              confidence: sequenceBufferRef.current.length / 30,
+              label: `Buffering... (${sequenceBufferRef.current.length}/${DYNAMIC_SEQUENCE_LENGTH})`,
+              confidence: 0, // Keep actual confidence at 0 until we have a real prediction
               handDetected: handDetected,
               accepted: false,
               modeName: 'DYNAMIC_LSTM'
             })
           }
 
-          if (Date.now() - lastAcceptedAtRef.current >= 2000) lastCommittedLetterRef.current = ''
+          if (Date.now() - lastAcceptedAtRef.current >= 3000) {
+            lastCommittedLetterRef.current = ''
+          }
         }
 
         setStatus(buildStatus('connected'))

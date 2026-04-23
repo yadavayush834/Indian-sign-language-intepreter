@@ -55,6 +55,10 @@ def _load_model_and_detector():
             if DYNAMIC_LABELS_PATH.exists():
                 with open(DYNAMIC_LABELS_PATH, 'r') as f:
                     dynamic_labels = [line.strip() for line in f.readlines()]
+
+            # Warm up graph execution so the first user prediction is not delayed.
+            warmup_input = np.zeros((1, 30, 126), dtype=np.float32)
+            dynamic_model.predict(warmup_input, verbose=0)
             print(f"[Backend] Dynamic model loaded with {len(dynamic_labels)} classes.")
         except Exception as e:
             print(f"[Backend] Error loading dynamic model: {e}")
@@ -130,7 +134,7 @@ def health():
 @app.post('/predict')
 async def predict(
     image: UploadFile = File(...),
-    threshold: float = Form(0.5)
+    threshold: float = Form(0.4)
 ):
     image_bytes = await image.read()
     np_bytes = np.frombuffer(image_bytes, dtype=np.uint8)
@@ -178,10 +182,45 @@ async def predict(
     }
 
 
+@app.post('/extract_landmarks')
+async def extract_landmarks(
+    image: UploadFile = File(...)
+):
+    image_bytes = await image.read()
+    np_bytes = np.frombuffer(image_bytes, dtype=np.uint8)
+    bgr_frame = cv2.imdecode(np_bytes, cv2.IMREAD_COLOR)
+
+    if bgr_frame is None:
+        raise HTTPException(status_code=400, detail='Invalid image payload')
+
+    bgr_frame = cv2.flip(bgr_frame, 1)
+    rgb_frame = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
+
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+
+    with predict_lock:
+        results = detector.detect(mp_image)
+
+    if not results.hand_landmarks:
+        return {
+            'mode': DYNAMIC_MODEL_NAME,
+            'handDetected': False,
+            'landmarks': []
+        }
+
+    features = extract_normalized_features(results.hand_landmarks)
+
+    return {
+        'mode': DYNAMIC_MODEL_NAME,
+        'handDetected': True,
+        'landmarks': features
+    }
+
+
 @app.post('/predict_sequence')
 async def predict_sequence(
     sequences: str = Form(...),  # JSON string of landmarks
-    threshold: float = Form(0.7)
+    threshold: float = Form(0.5)
 ):
     """
     Expects a JSON string representing a list of 30 frame feature vectors.
