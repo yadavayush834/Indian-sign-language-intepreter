@@ -1,73 +1,175 @@
-# Robust Landmark-Based Sign Language Interpreter
+# Beginner Setup Guide: Run Frontend + Backend Locally
 
-A real-time, highly robust Machine Learning pipeline for detecting completely custom physical gestures, including two-handed signs and digits (Indian Sign Language, ASL, custom vocabulary, etc.).
+This guide is for first-time users and works on any device, even if your folders have different names.
 
-Unlike traditional camera/CNN pixel-based detectors which suffer heavily from environmental "domain shift" (changes in room lighting, backgrounds, camera angle, and skin tone), this project uses **Google MediaPipe** to dynamically extract 126 normalized 3D hand coordinates (42 joints * (X,Y,Z)). 
-
-This means the actual AI model never processes colors or images—it only analyzes pure geometry and skeletal shape! The result is a mathematically bulletproof classifier that runs locally at ultra-high FPS.
+## What you will run
+- Frontend: React app in `Frontend`
+- Backend: Python FastAPI app in `backend`
 
 ## Prerequisites
-- Python 3.10+
-- A working webcam
+Install these first:
+- Git
+- Node.js (v20+)
+- Python (3.10+)
 
-## Quickstart Installation
+## 0) Clone the project
+Choose any folder on your computer and run:
 
-1. Cleanly clone the repository:
 ```bash
-git clone https://github.com/yadavayush834/isl-model_train.git
-cd isl-model_train
+git clone https://github.com/ManuStu-web/ISL-Interpreter.git
+cd ISL-Interpreter
 ```
 
-2. Create a virtual environment and activate it:
-```bash
-# Windows
-python -m venv venv
-.\venv\Scripts\activate
+If your cloned folder has another name, use that name in all `cd` commands.
 
-# Mac/Linux
-python3 -m venv venv
-source venv/bin/activate
+## 1) Required model files
+Place these files in the project root (same level where `Frontend` and `backend` folders exist):
+- `landmark_rf_model.pkl`
+- `hand_landmarker.task`
+
+Quick check (from project root):
+
+```bash
+ls landmark_rf_model.pkl hand_landmarker.task
 ```
 
-3. Install project sub-dependencies:
+## 2) Create and activate Python virtual environment (backend)
+Open Terminal 1 and go to backend:
+
 ```bash
-pip install -r requirements.txt
+cd backend
 ```
 
----
+Create virtual environment:
 
-## 3-Step Training Workflow
-
-You can customize this model to recognize **any** gesture across 1 or 2 hands. 
-
-### Step 1: Collect Data
-Gather hundreds of 3D skeletal snapshots using the data collector. 
 ```bash
-python collect_data.py
+python -m venv .venv
 ```
-*   Hold up your hand(s) to the camera (the app will dynamically handle 1 or 2 hands thanks to zero-padding architecture).
-*   While showing the sign, press the corresponding key on your keyboard to instantly log that exact coordinate frame to `landmark_dataset.csv`.
-*   *(Tip: Use letters `A-Z` and numbers `0-9`. Move your hand slightly while pressing the key to capture natural variations).*
 
-### Step 2: Train the ML Model
-Once you have collected data for at least 2 distinct signs, immediately generate a custom model:
+Activate virtual environment:
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Windows CMD:
+
+```cmd
+.venv\Scripts\activate.bat
+```
+
+macOS/Linux:
+
 ```bash
-python train_model.py
+source .venv/bin/activate
 ```
-This reads `landmark_dataset.csv`, drops the 126 features into an ultra-fast `RandomForestClassifier`, and packages it into `landmark_rf_model.pkl` in under 2 seconds.
 
-### Step 3: Real-Time Inference
-Launch the real-time detector to test your newly trained model:
+Install backend dependencies:
+
 ```bash
-python realtime_landmarks.py
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
-The app will bind to your webcam, hunt for the signs trained in Step 2, and overlay real-time confident classifications!
 
-## Contributing (Collaboration)
-Because this project utilizes a custom CSV architecture, you and a collaborating developer can train your hands independently! 
+Start backend server:
 
-1. Pull the repo locally.
-2. Run `collect_data.py` to add your personal hand sign skeleton variants directly to the very end of the shared `landmark_dataset.csv`.
-3. Push the `landmark_dataset.csv` update back to GitHub! 
+```bash
+python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+```
 
-When anyone else pulls down your new CSV changes and runs `train_model.py`, the AI will effortlessly learn to recognize both of your hands!
+Expected output includes:
+- `Uvicorn running on http://0.0.0.0:8000`
+
+## 3) Start frontend (Terminal 2)
+Open a second terminal and go to frontend:
+
+```bash
+cd ISL-Interpreter/Frontend
+```
+
+If you are already inside `ISL-Interpreter`, run `cd Frontend`.
+
+Create frontend env file (first time only):
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS/Linux:
+
+```bash
+cp .env.example .env
+```
+
+Install and run:
+
+```bash
+npm install
+npm run dev
+```
+
+Expected output includes:
+- `Local: http://localhost:5173/`
+
+## 4) Open app
+- Open `http://localhost:5173/app`
+- Click `Start Translation`
+- Allow camera access
+- Show your hand sign clearly
+
+## 5) Quick backend health check
+If prediction is not showing, test backend in Terminal 3:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+PowerShell alternative:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -Method Get
+```
+
+Expected result contains:
+
+```json
+{"status":"ok"}
+```
+
+## Common issues
+
+### `uvicorn` command fails
+Use:
+
+```bash
+python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Camera opens but no prediction
+Check:
+- Backend terminal is running without errors
+- `landmark_rf_model.pkl` is in project root
+- `hand_landmarker.task` is in project root
+- You opened `/app` route
+
+### Port 8000 already in use
+Run backend on another port:
+
+```bash
+python -m uvicorn app:app --host 0.0.0.0 --port 8001 --reload
+```
+
+Then edit `Frontend/.env`:
+
+```env
+VITE_SIGN_API_URL=http://localhost:8001
+```
+
+Restart frontend after changing `.env`.
+
+## Stop servers
+In each running terminal, press `Ctrl + C`.
