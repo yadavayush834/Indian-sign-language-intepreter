@@ -3,8 +3,10 @@ import Camera from './Camera'
 import Divider from './Divider'
 import TranslationText from './TranslationText'
 import useSignInference from '../../hooks/useSignInference'
+import TextToSignInterface from './TextToSignInterface'
 
 const Center = ({ isDark }) => {
+  const [appMode, setAppMode] = useState('sign2text') // 'sign2text' or 'text2sign'
   const [isCameraOn, setIsCameraOn] = useState(false)
   const [isTranslating, setIsTranslating] = useState(false)
   const [signMode, setSignMode] = useState('static') // 'static' or 'dynamic'
@@ -50,9 +52,52 @@ const Center = ({ isDark }) => {
   }
 
   return (
-    <div className='flex flex-col items-center justify-center w-full flex-1 gap-12 mt-20'>
+    <div className='flex flex-col items-center justify-center w-full flex-1 gap-8 mt-12 mb-12'>
 
-      {/* Mode Toggle (Pill Switch) */}
+      {/* Main App Mode Toggle */}
+      <div 
+        className='flex items-center p-1 rounded-full mb-4'
+        style={{
+          background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+          border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+          width: '320px',
+          position: 'relative',
+          height: '50px'
+        }}
+      >
+        <div 
+          className='absolute transition-all duration-300 ease-in-out'
+          style={{
+            left: appMode === 'sign2text' ? '4px' : '160px',
+            width: '154px',
+            height: '42px',
+            background: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)',
+            borderRadius: '999px',
+            border: isDark ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(59, 130, 246, 0.3)',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+          }}
+        />
+        <button 
+          onClick={() => setAppMode('sign2text')}
+          className='flex-1 z-10 text-sm font-semibold transition-colors duration-300 flex items-center justify-center gap-2'
+          style={{ color: appMode === 'sign2text' ? (isDark ? '#fff' : '#000') : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)') }}
+        >
+          <i className="ri-camera-lens-line"></i>
+          Sign to Text
+        </button>
+        <button 
+          onClick={() => setAppMode('text2sign')}
+          className='flex-1 z-10 text-sm font-semibold transition-colors duration-300 flex items-center justify-center gap-2'
+          style={{ color: appMode === 'text2sign' ? (isDark ? '#fff' : '#000') : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)') }}
+        >
+          <i className="ri-translate-2"></i>
+          Text to Sign
+        </button>
+      </div>
+
+      {appMode === 'sign2text' ? (
+        <>
+          {/* Mode Toggle (Pill Switch for Static/Dynamic) */}
       <div 
         className='flex items-center p-1 rounded-full'
         style={{
@@ -149,6 +194,12 @@ const Center = ({ isDark }) => {
           {isTranslating ? 'Stop Translation' : 'Start Translation'}
         </button>
       </div>
+        </>
+      ) : (
+        <div className="w-full max-w-5xl px-4 flex-1 flex flex-col justify-center">
+          <TextToSignInterface />
+        </div>
+      )}
 
     </div>
   )
