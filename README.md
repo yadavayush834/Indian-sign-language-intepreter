@@ -1,175 +1,172 @@
-# Beginner Setup Guide: Run Frontend + Backend Locally
+# Robust Landmark-Based Sign Language Interpreter
 
-This guide is for first-time users and works on any device, even if your folders have different names.
+This project provides a real-time sign language pipeline for both model training and app usage.
 
-## What you will run
-- Frontend: React app in `Frontend`
-- Backend: Python FastAPI app in `backend`
+It uses Google MediaPipe hand landmarks (126 normalized 3D features for up to two hands) instead of raw pixels. That makes inference more robust to lighting/background changes and keeps runtime fast.
+
+## What this repository includes
+- Model data collection and training scripts (static and sequence)
+- Python FastAPI backend for inference
+- React frontend app (Sign-to-Text and Text-to-Sign)
+- Pretrained artifacts support (`landmark_rf_model.pkl`, `sequence_model.keras`, etc.)
 
 ## Prerequisites
-Install these first:
 - Git
-- Node.js (v20+)
-- Python (3.10+)
+- Node.js 20+
+- Python 3.10+
+- Webcam
 
-## 0) Clone the project
-Choose any folder on your computer and run:
+## Project structure
+- `ISL-Interpreter/Frontend` - React frontend
+- `ISL-Interpreter/backend` - FastAPI backend
+- `collect_data.py` - static landmark data collection
+- `train_model.py` - static RF training
+- `collect_sequences.py` - sequence data collection
+- `train_sequence_model.py` - LSTM sequence training
 
+## Beginner setup (run frontend + backend)
+
+### 1) Clone and enter repo
 ```bash
-git clone https://github.com/ManuStu-web/ISL-Interpreter.git
-cd ISL-Interpreter
+git clone <your-repo-url>
+cd <your-cloned-folder>
 ```
 
-If your cloned folder has another name, use that name in all `cd` commands.
-
-## 1) Required model files
-Place these files in the project root (same level where `Frontend` and `backend` folders exist):
+### 2) Ensure required model files exist
+Place these in the project root:
 - `landmark_rf_model.pkl`
 - `hand_landmarker.task`
 
-Quick check (from project root):
+Optional for dynamic mode:
+- `sequence_model.keras`
+- `sequence_labels.txt`
 
+### 3) Start backend (Terminal 1)
 ```bash
-ls landmark_rf_model.pkl hand_landmarker.task
-```
-
-## 2) Create and activate Python virtual environment (backend)
-Open Terminal 1 and go to backend:
-
-```bash
-cd backend
-```
-
-Create virtual environment:
-
-```bash
+cd ISL-Interpreter/backend
 python -m venv .venv
 ```
 
-Activate virtual environment:
+Activate venv:
 
 Windows PowerShell:
-
 ```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
 Windows CMD:
-
 ```cmd
 .venv\Scripts\activate.bat
 ```
 
 macOS/Linux:
-
 ```bash
 source .venv/bin/activate
 ```
 
-Install backend dependencies:
-
+Install and run backend:
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-```
-
-Start backend server:
-
-```bash
 python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Expected output includes:
-- `Uvicorn running on http://0.0.0.0:8000`
+Health check:
+```bash
+curl http://127.0.0.1:8000/health
+```
 
-## 3) Start frontend (Terminal 2)
-Open a second terminal and go to frontend:
+Expected response:
+```json
+{"status":"ok"}
+```
 
+### 4) Start frontend (Terminal 2)
 ```bash
 cd ISL-Interpreter/Frontend
 ```
 
-If you are already inside `ISL-Interpreter`, run `cd Frontend`.
-
-Create frontend env file (first time only):
+Create env file if needed:
 
 Windows PowerShell:
-
 ```powershell
 Copy-Item .env.example .env
 ```
 
 macOS/Linux:
-
 ```bash
 cp .env.example .env
 ```
 
-Install and run:
-
+Run frontend:
 ```bash
 npm install
 npm run dev
 ```
 
-Expected output includes:
-- `Local: http://localhost:5173/`
+Open:
+- `http://localhost:5173/app`
 
-## 4) Open app
-- Open `http://localhost:5173/app`
-- Click `Start Translation`
-- Allow camera access
-- Show your hand sign clearly
+## Training workflow (custom signs)
 
-## 5) Quick backend health check
-If prediction is not showing, test backend in Terminal 3:
-
+### Static model
+1. Collect landmark snapshots:
 ```bash
-curl http://127.0.0.1:8000/health
+python collect_data.py
 ```
 
-PowerShell alternative:
-
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -Method Get
+2. Train RF model:
+```bash
+python train_model.py
 ```
 
-Expected result contains:
-
-```json
-{"status":"ok"}
+3. Test in real time:
+```bash
+python realtime_landmarks.py
 ```
+
+### Dynamic sequence model
+1. Collect sequence samples:
+```bash
+python collect_sequences.py
+```
+
+2. Train sequence model:
+```bash
+python train_sequence_model.py
+```
+
+This produces:
+- `sequence_model.keras`
+- `sequence_labels.txt`
 
 ## Common issues
 
-### `uvicorn` command fails
-Use:
-
+### `uvicorn` command not found
+Use module form:
 ```bash
 python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Camera opens but no prediction
+### Camera opens but no predictions
 Check:
-- Backend terminal is running without errors
-- `landmark_rf_model.pkl` is in project root
-- `hand_landmarker.task` is in project root
-- You opened `/app` route
+- backend is running without errors
+- required model files are present at project root
+- frontend points to correct backend URL
+- app route is `http://localhost:5173/app`
 
-### Port 8000 already in use
+### Port 8000 in use
 Run backend on another port:
-
 ```bash
 python -m uvicorn app:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-Then edit `Frontend/.env`:
-
+Then set in `ISL-Interpreter/Frontend/.env`:
 ```env
 VITE_SIGN_API_URL=http://localhost:8001
 ```
 
-Restart frontend after changing `.env`.
+Restart frontend after `.env` changes.
 
 ## Stop servers
-In each running terminal, press `Ctrl + C`.
+Press `Ctrl + C` in each running terminal.
