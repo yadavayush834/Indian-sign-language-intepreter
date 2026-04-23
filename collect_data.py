@@ -50,10 +50,13 @@ def extract_normalized_features(hand_landmarks_list):
 
 print("\n--- DUAL-HAND DATA COLLECTION MODE ---")
 print("How to use:")
-print("1. Show a hand sign to the camera (1 or 2 hands).")
-print("2. Press a LETTER key to save a snapshot.")
-print("3. Gather 10-20 good samples per sign.")
-print("4. Press '1' to quit.")
+print("1. Enter the SIGN label you want to record (e.g., '1', 'A', or '10').")
+print("2. Show the sign to the camera.")
+print("3. Press SPACEBAR to save a snapshot of that label.")
+print("4. Press 'N' to change to a different label.")
+print("5. Press 'Q' to quit.")
+
+current_label = input("\nEnter the label for the sign (e.g. 10, A): ").strip().upper()
 
 while True:
     ret, frame = cap.read()
@@ -79,25 +82,31 @@ while True:
                 cx, cy = int(lm.x * w), int(lm.y * h)
                 cv2.circle(frame, (cx, cy), 4, (0, 255, 0), -1)
             
-        cv2.putText(frame, f"Hands Tracked: {num_hands_detected}. Ready to Save!", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(frame, f"Hands Tracked: {num_hands_detected}. Ready!", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
     else:
         cv2.putText(frame, "No hand detected", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         
-    cv2.putText(frame, "Press a LETTER key to capture.", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.putText(frame, f"Label: {current_label} | SPACE to Capture", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.putText(frame, "'N' for New Label | 'Q' to Quit", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 2)
     cv2.imshow("Data Collection", frame)
 
     key = cv2.waitKey(1) & 0xFF
     
-    if key == ord('1'):
+    # Exit on 'q'
+    if key == ord('q'):
         break
-        
-    elif (ord('a') <= key <= ord('z') or ord('0') <= key <= ord('9')) and num_hands_detected > 0:
-        label = chr(key).upper()
+    
+    # Change Label on 'n'
+    if key == ord('n'):
+        current_label = input("\nEnter NEW label: ").strip().upper()
+
+    # Capture on SPACE
+    elif key == ord(' ') and num_hands_detected > 0:
         with open(DATASET_FILE, mode='a', newline='') as f:
             writer = csv.writer(f)
-            row = [label] + features
+            row = [current_label] + features
             writer.writerow(row)
-        print(f"Captured snapshot for '{label}'! ({num_hands_detected} hands)")
+        print(f"Captured snapshot for '{current_label}'! ({num_hands_detected} hands)")
         
 cap.release()
 cv2.destroyAllWindows()
